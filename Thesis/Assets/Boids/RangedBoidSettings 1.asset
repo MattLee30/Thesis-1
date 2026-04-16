@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f6a06247378e4cdca357bfeb27e0ef9, type: 3}
+  m_Name: RangedBoidSettings 1
+  m_EditorClassIdentifier: Assembly-CSharp::BoidSettings
+  flockType: 1
+  flockColor: {r: 0, g: 0.1404357, b: 1, a: 1}
+  minSpeed: 2
+  maxSpeed: 5
+  maxSteerForce: 3
+  perceptionRadius: 2.5
+  avoidanceRadius: 1
+  separationWeight: 1.5
+  alignmentWeight: 1
+  cohesionWeight: 1
+  crossFlockSeparationWeight: 2
+  obstacleAvoidanceWeight: 10
+  obstacleAvoidanceRadius: 1.5
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 64
+  boundaryRadius: 25
+  boundaryTurnStrength: 5
+  flockSize: 40
+  spawnRadius: 5
+  targetFollowSpeed: 3
+  targetStopDistance: 2
+  targetSlowDistance: 8
+  aggroRadius: 15
+  aggroTag: Player
+  targetSeekWeight: 0
+  engageBoundaryRadius: -1
+  engageAvoidanceRadius: -1
+  targetKeepDistance: 3
+  groupUpThreshold: 0.7
