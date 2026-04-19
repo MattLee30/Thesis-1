@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 655211188914749032}
   - component: {fileID: 2254804367103075478}
   - component: {fileID: 5668691681085270282}
-  - component: {fileID: 8977954680963733223}
+  - component: {fileID: -683278266553810802}
   m_Layer: 0
   m_Name: Glass
   m_TagString: Untagged
@@ -129,7 +129,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BoidAgent
   settings: {fileID: 0}
   manager: {fileID: 0}
---- !u!114 &8977954680963733223
+--- !u!114 &-683278266553810802
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -138,6 +138,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 5951144027337224860}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8638859050e7b418db5581cf3e76b0b7, type: 3}
+  m_Script: {fileID: 11500000, guid: 287d87320bb7720409ff07b4f78a82a2, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: '::'
+  m_EditorClassIdentifier: Assembly-CSharp::GlassShardMesh
+  vertexCount: 6
+  baseRadius: 0.3
+  irregularity: 0.55
+  elongation: 0.5
+  glassMaterial: {fileID: 2100000, guid: 730ea7f1cb2d744b89a6c800a99bfa22, type: 2}

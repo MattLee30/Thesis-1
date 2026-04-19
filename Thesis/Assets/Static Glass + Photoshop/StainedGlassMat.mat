@@ -8,8 +8,8 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: StainedGlassMat
-  m_Shader: {fileID: -6465566751694194690, guid: dbc91fd801b6a324b84fd543bb83c7fc, type: 3}
-  m_Parent: {fileID: 2100000, guid: 78814e631b6360a48a09c4dcb740976d, type: 2}
+  m_Shader: {fileID: -6465566751694194690, guid: dd3149ae19d084a70af5437f4f427199, type: 3}
+  m_Parent: {fileID: 2100000, guid: 48fa87c9bcd984ff4b138389b0c98a62, type: 2}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords: []
@@ -24,6 +24,10 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _DistortionText:
+        m_Texture: {fileID: 2800000, guid: 545dfe0820f7d45d3a1df99aa5efb1c4, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _GlassNormalMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -34,8 +38,8 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _DistortionStrength: 0
-    - _FresnelPower: 0
+    - _DistortionStrength: 0.02
+    - _FresnelPower: 3
     m_Colors: []
   m_BuildTextureStacks: []
   m_AllowLocking: 1

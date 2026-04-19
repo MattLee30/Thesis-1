@@ -39,7 +39,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _DistortionStrength: 0
-    - _FresnelPower: 0
+    - _FresnelPower: 0.2
     m_Colors: []
   m_BuildTextureStacks: []
   m_AllowLocking: 1
