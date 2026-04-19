@@ -1,93 +1,92 @@
 using UnityEngine;
 
-[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
+// Generates an irregular glass-shard polygon mesh at runtime and assigns it to
+// the MeshFilter (and MeshCollider if present) on this GameObject.
+// Add this component to the boid prefab. Runs in Awake so the mesh is ready
+// before any other component references it.
+[RequireComponent(typeof(MeshFilter))]
 public class GlassShardMesh : MonoBehaviour
 {
-    [Header("Shard Shape")]
-    [SerializeField, Range(5, 8)] private int vertexCount = 6;
-    [SerializeField] private float baseRadius = 0.3f;
-    [SerializeField, Range(0f, 1f)] private float irregularity = 0.55f;
-    [SerializeField, Range(0f, 1f)] private float elongation = 0.5f;
+    [Tooltip("Overall size of the shard in local units. Increase the prefab scale alongside this for world-space size.")]
+    [SerializeField] private float size = 1f;
 
-    [Header("Visual")]
-    [SerializeField] private Material glassMaterial; // assign a shared URP/Unlit transparent mat
+    [Tooltip("How much each vertex is randomly displaced from the base shape. Higher = more jagged.")]
+    [SerializeField] [Range(0f, 0.25f)] private float jitter = 0.10f;
 
-    private static readonly int ColorID = Shader.PropertyToID("_BaseColor");
-    private MaterialPropertyBlock _mpb;
+    [Tooltip("Seed for per-boid shape variation. -1 uses the instance ID so every boid differs.")]
+    [SerializeField] private int seed = -1;
+
+    // Base shard outline — 8 vertices ordered CCW in the XZ plane (Y = 0).
+    // Designed to look like a roughly elongated, asymmetric glass shard.
+    private static readonly Vector2[] BasePerimeter = new Vector2[]
+    {
+        new Vector2( 0.00f,  0.95f),   // tip (top)
+        new Vector2(-0.35f,  0.55f),   // upper left
+        new Vector2(-0.58f,  0.05f),   // left
+        new Vector2(-0.15f, -0.72f),   // lower left
+        new Vector2( 0.05f, -0.90f),   // tip (bottom)
+        new Vector2( 0.50f, -0.58f),   // lower right
+        new Vector2( 0.55f,  0.12f),   // right
+        new Vector2( 0.40f,  0.60f),   // upper right
+    };
 
     private void Awake()
     {
-        GenerateShard();
+        Mesh shard = BuildMesh();
+
+        GetComponent<MeshFilter>().mesh = shard;
+
+        MeshCollider col = GetComponent<MeshCollider>();
+        if (col != null)
+            col.sharedMesh = shard;
     }
 
-    private void GenerateShard()
+    private Mesh BuildMesh()
     {
-        // --- Shape parameters randomised once per boid ---
-        int n = Random.Range(5, vertexCount + 1);
-        float elongFactor = 1f + Random.Range(0f, elongation) * 2f; // stretch on one axis
-        float elongAngle = Random.Range(0f, Mathf.PI);               // direction of stretch
+        int n = BasePerimeter.Length;
+        Vector2[] perimeter = new Vector2[n];
 
-        Vector3[] verts = new Vector3[n + 1]; // +1 for centre
+        // Apply per-instance jitter so every boid has a unique silhouette.
+        Random.State savedState = Random.state;
+        Random.InitState(seed >= 0 ? seed : GetInstanceID());
+        for (int i = 0; i < n; i++)
+            perimeter[i] = BasePerimeter[i] + Random.insideUnitCircle * jitter;
+        Random.state = savedState;
+
+        // Compute centroid for fan triangulation — works on any simple polygon.
+        Vector2 centroid = Vector2.zero;
+        for (int i = 0; i < n; i++)
+            centroid += perimeter[i];
+        centroid /= n;
+
+        // Build vertex array: [0] = centroid, [1..n] = perimeter (in XZ plane, Y = 0).
+        Vector3[] verts = new Vector3[n + 1];
+        Vector2[] uvs   = new Vector2[n + 1];
+
+        verts[0] = new Vector3(centroid.x * size, 0f, centroid.y * size);
+        uvs[0]   = centroid * 0.5f + Vector2.one * 0.5f;
+
+        for (int i = 0; i < n; i++)
+        {
+            verts[i + 1] = new Vector3(perimeter[i].x * size, 0f, perimeter[i].y * size);
+            uvs[i + 1]   = perimeter[i] * 0.5f + Vector2.one * 0.5f;
+        }
+
+        // Fan triangles from centroid: (centroid, v_i, v_{i+1 mod n}).
         int[] tris = new int[n * 3];
-
-        verts[0] = Vector3.zero; // centre vertex
-
         for (int i = 0; i < n; i++)
         {
-            // Evenly spaced base angle with random jitter
-            float baseAngle = (Mathf.PI * 2f * i) / n;
-            float jitter = (Random.value - 0.5f) * (Mathf.PI * 2f / n) * irregularity;
-            float angle = baseAngle + jitter;
-
-            // Radius jitter
-            float r = baseRadius * Random.Range(1f - irregularity, 1f);
-
-            // Apply elongation along elongAngle
-            float cosA = Mathf.Cos(angle - elongAngle);
-            r *= Mathf.Lerp(1f, elongFactor * Mathf.Abs(cosA) + (1f - Mathf.Abs(cosA)), elongation);
-
-            verts[i + 1] = new Vector3(Mathf.Cos(angle) * r, Mathf.Sin(angle) * r, 0f);
+            tris[i * 3]     = 0;
+            tris[i * 3 + 1] = i + 1;
+            tris[i * 3 + 2] = i < n - 1 ? i + 2 : 1;
         }
 
-        // Fan triangles from centre
-        for (int i = 0; i < n; i++)
-        {
-            int ti = i * 3;
-            tris[ti]     = 0;
-            tris[ti + 1] = i + 1;
-            tris[ti + 2] = (i + 1) % n + 1;
-        }
-
-        Mesh mesh = new Mesh();
-        mesh.name = "GlassShard";
-        mesh.vertices = verts;
+        Mesh mesh = new Mesh { name = "GlassShard" };
+        mesh.vertices  = verts;
+        mesh.uv        = uvs;
         mesh.triangles = tris;
         mesh.RecalculateNormals();
-
-        GetComponent<MeshFilter>().mesh = mesh;
-
-        MeshRenderer mr = GetComponent<MeshRenderer>();
-        if (glassMaterial != null)
-            mr.sharedMaterial = glassMaterial;
-
-        // Per-instance colour via MaterialPropertyBlock — no material duplication
-        _mpb = new MaterialPropertyBlock();
-        Color c = Color.white;
-        c.a = Random.Range(0.35f, 0.75f); // each shard slightly different opacity
-        _mpb.SetColor(ColorID, c);
-        mr.SetPropertyBlock(_mpb);
-    }
-
-    public void SetTint(Color flockColor)
-    {
-    if (_mpb == null) _mpb = new MaterialPropertyBlock();
-    MeshRenderer mr = GetComponent<MeshRenderer>();
-    mr.GetPropertyBlock(_mpb);
-
-    // Preserve per-instance alpha, apply flock hue
-    Color current = _mpb.GetColor(ColorID);
-    flockColor.a = current.a;
-    _mpb.SetColor(ColorID, flockColor);
-    mr.SetPropertyBlock(_mpb);
+        mesh.RecalculateBounds();
+        return mesh;
     }
 }

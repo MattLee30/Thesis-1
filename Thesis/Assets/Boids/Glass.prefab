@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 655211188914749032}
   - component: {fileID: 2254804367103075478}
   - component: {fileID: 5668691681085270282}
-  - component: {fileID: -683278266553810802}
+  - component: {fileID: 7728339131699003377}
   m_Layer: 0
   m_Name: Glass
   m_TagString: Untagged
@@ -31,7 +31,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: -0, z: 0}
-  m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
+  m_LocalScale: {x: 0.5, y: 0.5, z: 0.5}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -129,7 +129,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BoidAgent
   settings: {fileID: 0}
   manager: {fileID: 0}
---- !u!114 &-683278266553810802
+--- !u!114 &7728339131699003377
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -141,8 +141,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 287d87320bb7720409ff07b4f78a82a2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GlassShardMesh
-  vertexCount: 6
-  baseRadius: 0.3
-  irregularity: 0.55
-  elongation: 0.5
-  glassMaterial: {fileID: 2100000, guid: 730ea7f1cb2d744b89a6c800a99bfa22, type: 2}
+  size: 1
+  jitter: 0.1
+  seed: -1

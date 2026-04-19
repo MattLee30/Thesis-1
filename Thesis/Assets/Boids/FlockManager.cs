@@ -202,16 +202,9 @@ public class FlockManager : MonoBehaviour
 
     private void ApplyFlockColor(BoidAgent boid)
     {
-        GlassShardMesh shard = boid.GetComponentInChildren<GlassShardMesh>();
-        if (shard != null)
-        {
-            shard.SetTint(settings.flockColor); // see below
-            return;
-        }
-
-        // Fallback for non-shard renderers
-        Renderer r = boid.GetComponentInChildren<Renderer>();
-        if (r != null) r.material.color = settings.flockColor;
+        Renderer renderer = boid.GetComponentInChildren<Renderer>();
+        if (renderer != null)
+            renderer.material.color = settings.flockColor;
     }
 
     private void LateUpdate()
