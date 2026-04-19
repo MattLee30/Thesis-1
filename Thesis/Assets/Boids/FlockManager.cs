@@ -8,6 +8,14 @@ public class FlockManager : MonoBehaviour
     [SerializeField] private BoidSettings settings;
     [SerializeField] private GameObject boidPrefab;
 
+    [Header("Window Layout")]
+    [Tooltip("Width of the stained-glass window that this flock's shards collectively form.")]
+    [SerializeField] private float windowWidth  = 10f;
+    [Tooltip("Height of the stained-glass window that this flock's shards collectively form.")]
+    [SerializeField] private float windowHeight = 8f;
+    [Tooltip("Seed for the fracture pattern. Change to get a different shard layout.")]
+    [SerializeField] private int   fractureSeed = 42;
+
     [Header("Debug")]
     [SerializeField] private bool drawGizmos = true;
 
@@ -137,15 +145,30 @@ public class FlockManager : MonoBehaviour
 
     private void SpawnFlock()
     {
+        // Pre-generate fracture layout so every boid gets a uniquely-shaped shard
+        // that fits flush with all its neighbours when assembled into the window.
+        WindowFractureLayout.ShardData[] shards = null;
+        if (boidPrefab.GetComponent<GlassShardMesh>() != null)
+            shards = WindowFractureLayout.Generate(settings.flockSize, windowWidth, windowHeight, fractureSeed);
+
         for (int i = 0; i < settings.flockSize; i++)
         {
-            Vector3 spawnPos = transform.position + Random.insideUnitSphere * settings.spawnRadius;
+            Vector3 spawnPos      = transform.position + Random.insideUnitSphere * settings.spawnRadius;
             Vector3 startVelocity = Random.onUnitSphere * settings.maxSpeed * 0.5f;
 
             GameObject boidObj = Instantiate(boidPrefab, spawnPos, Quaternion.LookRotation(startVelocity), transform);
+
+            // Assign this boid's shard before Start() runs so the mesh is ready immediately.
+            if (shards != null)
+            {
+                GlassShardMesh glassMesh = boidObj.GetComponent<GlassShardMesh>();
+                if (glassMesh != null)
+                    glassMesh.Initialize(shards[i], windowWidth, windowHeight);
+            }
+
             BoidAgent agent = boidObj.GetComponent<BoidAgent>();
             agent.settings = settings;
-            agent.manager = this;
+            agent.manager  = this;
             agent.Initialize(startVelocity);
             ApplyFlockColor(agent);
 

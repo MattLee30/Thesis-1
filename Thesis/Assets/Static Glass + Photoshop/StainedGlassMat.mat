@@ -9,7 +9,7 @@ Material:
   m_PrefabAsset: {fileID: 0}
   m_Name: StainedGlassMat
   m_Shader: {fileID: -6465566751694194690, guid: dd3149ae19d084a70af5437f4f427199, type: 3}
-  m_Parent: {fileID: 2100000, guid: 48fa87c9bcd984ff4b138389b0c98a62, type: 2}
+  m_Parent: {fileID: 2100000, guid: 46ac83dedb52e46c2a5d820d7c5a8abd, type: 2}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords: []
@@ -33,11 +33,11 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainText:
-        m_Texture: {fileID: 2800000, guid: 408cea4c3428c4a999781f92230b79ed, type: 3}
+        m_Texture: {fileID: 2800000, guid: 620fce6e474534889abcf80a303d23f1, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Normal:
-        m_Texture: {fileID: 2800000, guid: 099cbecc62920433181d552ba7411d79, type: 3}
+        m_Texture: {fileID: 2800000, guid: f3cd71ec3bb2b42ac8dc82606feda3dc, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _TransmittanceText:
