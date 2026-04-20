@@ -241,11 +241,16 @@ public class FlockManager : MonoBehaviour
         return center / boids.Count;
     }
 
+    private static readonly int FlockColorID = Shader.PropertyToID("_Color");
+
     private void ApplyFlockColor(BoidAgent boid)
     {
         Renderer renderer = boid.GetComponentInChildren<Renderer>();
-        if (renderer != null)
-            renderer.material.color = settings.flockColor;
+        if (renderer == null) return;
+        MaterialPropertyBlock mpb = new MaterialPropertyBlock();
+        renderer.GetPropertyBlock(mpb);
+        mpb.SetColor(FlockColorID, settings.flockColor);
+        renderer.SetPropertyBlock(mpb);
     }
 
     // Sets the shared shard material before ApplyFlockColor creates per-instance copies.
