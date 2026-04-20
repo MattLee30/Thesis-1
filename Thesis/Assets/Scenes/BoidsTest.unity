@@ -443,6 +443,58 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &579559739
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 579559741}
+  - component: {fileID: 579559740}
+  m_Layer: 0
+  m_Name: StainedGlassProfiler
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &579559740
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 579559739}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 67672e28fe4d34645bae51082158a8d7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StainedGlassProfiler
+  shaderNameFilter: StainedGlassMat2
+  warmupFrames: 30
+  rollingWindow: 120
+  isolationKey: 105
+  isolationHoldFrames: 60
+  logToCSV: 1
+  showOverlay: 1
+  csvFilePrefix: StainedGlassProfile
+--- !u!4 &579559741
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 579559739}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: -0.00001}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &750558651
 GameObject:
   m_ObjectHideFlags: 0
@@ -1142,53 +1194,6 @@ MonoBehaviour:
   fractureSeed: 42
   shardMaterial: {fileID: 0}
   drawGizmos: 1
---- !u!1 &1397998578
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1397998580}
-  - component: {fileID: 1397998579}
-  m_Layer: 0
-  m_Name: ColorVolume
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1397998579
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1397998578}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2c4d2cbb11f2327469beac0765f1b43d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ColorVolumeInjector
-  colorVolumeRT: {fileID: 0}
-  stainedGlassMaterial: {fileID: 0}
-  boidMaterial: {fileID: 2100000, guid: 78814e631b6360a48a09c4dcb740976d, type: 2}
---- !u!4 &1397998580
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1397998578}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -4.44, y: 1.4, z: -8.72378}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1585165941
 GameObject:
   m_ObjectHideFlags: 0
@@ -1433,7 +1438,7 @@ SceneRoots:
   - {fileID: 497259938}
   - {fileID: 750558655}
   - {fileID: 1343490604}
-  - {fileID: 1397998580}
   - {fileID: 2023694732}
   - {fileID: 156414634}
   - {fileID: 1210458872}
+  - {fileID: 579559741}

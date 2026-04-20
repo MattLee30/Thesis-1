@@ -211,7 +211,7 @@ public class StainedGlassProfiler : MonoBehaviour
     void OpenCSV()
     {
         string ts = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        _csvPath = Path.Combine(Application.persistentDataPath, $"{csvFilePrefix}_{ts}.csv");
+        _csvPath = Path.Combine(Application.dataPath, $"{csvFilePrefix}_{ts}.csv");
         _csv = new StreamWriter(_csvPath, false, Encoding.UTF8);
         _csv.WriteLine("# StainedGlass Shader Profiler");
         _csv.WriteLine($"# Shader filter: {shaderNameFilter}");
