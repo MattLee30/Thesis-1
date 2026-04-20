@@ -16,6 +16,10 @@ public class FlockManager : MonoBehaviour
     [Tooltip("Seed for the fracture pattern. Change to get a different shard layout.")]
     [SerializeField] private int   fractureSeed = 42;
 
+    [Header("Shard Material")]
+    [Tooltip("Shared material applied to every shard. Populated automatically by ImageToGlassPipeline.")]
+    [SerializeField] private Material shardMaterial;
+
     [Header("Debug")]
     [SerializeField] private bool drawGizmos = true;
 
@@ -64,6 +68,19 @@ public class FlockManager : MonoBehaviour
         target = null;
         state = FlockState.Idle;
     }
+
+    public float WindowWidth  => windowWidth;
+    public float WindowHeight => windowHeight;
+
+    // Called by ImageToGlassPipeline.Awake() before Start() spawns the flock.
+    public void SetWindowConfig(float width, float height, int seed)
+    {
+        windowWidth  = width;
+        windowHeight = height;
+        fractureSeed = seed;
+    }
+
+    public void SetShardMaterial(Material mat) => shardMaterial = mat;
 
     public void SetForeignBoids(List<BoidAgent> foreign)
     {
@@ -170,6 +187,7 @@ public class FlockManager : MonoBehaviour
             agent.settings = settings;
             agent.manager  = this;
             agent.Initialize(startVelocity);
+            ApplyShardMaterial(boidObj);
             ApplyFlockColor(agent);
 
             boids.Add(agent);
@@ -228,6 +246,15 @@ public class FlockManager : MonoBehaviour
         Renderer renderer = boid.GetComponentInChildren<Renderer>();
         if (renderer != null)
             renderer.material.color = settings.flockColor;
+    }
+
+    // Sets the shared shard material before ApplyFlockColor creates per-instance copies.
+    // This ensures each instance starts from the pipeline material (with the image texture).
+    private void ApplyShardMaterial(GameObject boidObj)
+    {
+        if (shardMaterial == null) return;
+        Renderer r = boidObj.GetComponentInChildren<Renderer>();
+        if (r != null) r.sharedMaterial = shardMaterial;
     }
 
     private void LateUpdate()
