@@ -4,18 +4,30 @@ using System.Text;
 using UnityEngine;
 using Unity.Profiling;
 
+public enum ConfigLabel { Static, Dynamic, Hybrid }
+
 /// <summary>
-/// Tracks approximate GPU frame cost of the StainedGlassShader.
+/// Records per-frame GPU cost for three named rendering configurations.
+/// Each run produces a CSV that graph_profiler.py converts into thesis figures
+/// and a LaTeX table.
 ///
-/// ISOLATION MODE (press I): disables all renderers using a StainedGlass material,
-/// records baseline GPU time, then re-enables them. The delta is the shader's cost.
-///
-/// CSV output is written to Application.persistentDataPath — shown in the overlay.
+/// Workflow:
+///   1. Set Configuration and BoidCount in the Inspector for this run.
+///   2. Enter Play mode; let warmup complete (overlay turns green).
+///   3. Press [I] to run an isolation measurement, then exit Play.
+///   4. Repeat for each configuration (Static / Dynamic / Hybrid).
+///   5. Run graph_profiler.py on all three CSVs.
 /// </summary>
 [AddComponentMenu("Profiling/Stained Glass Shader Profiler")]
 public class StainedGlassProfiler : MonoBehaviour
 {
-    [Header("Target Shader Name (substring match)")]
+    [Header("Experiment")]
+    [Tooltip("Which rendering configuration is active in this scene.")]
+    public ConfigLabel configuration = ConfigLabel.Hybrid;
+    [Tooltip("Number of active boid agents. Set manually to match your BoidManager.")]
+    public int boidCount = 500;
+
+    [Header("Shader Filter")]
     public string shaderNameFilter = "StainedGlass";
 
     [Header("Sampling")]
@@ -49,7 +61,7 @@ public class StainedGlassProfiler : MonoBehaviour
     private int _frame;
 
     // ── Isolation state ───────────────────────────────────────────────────────
-    private enum IsoState { Idle, BaselineWait, ShaderOff, Result }
+    private enum IsoState { Idle, BaselineWait, ShaderOff }
     private IsoState _isoState = IsoState.Idle;
     private int _isoFrameCounter;
     private double _isoBaseline;
@@ -69,13 +81,12 @@ public class StainedGlassProfiler : MonoBehaviour
 
     void OnEnable()
     {
-        // GPU Frame Time is available in Unity 2020.2+ via Profiling.Core
-        _gpuRecorder        = ProfilerRecorder.StartNew(ProfilerCategory.Render,   "GPU Frame Time", 8);
+        _gpuRecorder          = ProfilerRecorder.StartNew(ProfilerCategory.Render,   "GPU Frame Time", 8);
         _renderThreadRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Render Thread",  8);
 
         if (logToCSV) OpenCSV();
 
-        Debug.Log($"[StainedGlassProfiler] Enabled. Shader filter: '{shaderNameFilter}'. " +
+        Debug.Log($"[StainedGlassProfiler] Config={configuration} Boids={boidCount}. " +
                   $"Press [{isolationKey}] for isolation measurement.");
     }
 
@@ -93,7 +104,6 @@ public class StainedGlassProfiler : MonoBehaviour
 
         double gpuMs = SampleRecorder(_gpuRecorder);
 
-        // ── Rolling stats ─────────────────────────────────────────────────────
         if (gpuMs > 0)
         {
             _gpuWindow.Enqueue(gpuMs);
@@ -108,11 +118,11 @@ public class StainedGlassProfiler : MonoBehaviour
             if (logToCSV && _csv != null)
             {
                 double rtMs = SampleRecorder(_renderThreadRecorder);
-                _csv.WriteLine($"{Time.frameCount},{gpuMs:F3},{rtMs:F3},{(_isoState != IsoState.Idle ? 1 : 0)}");
+                int isoActive = _isoState != IsoState.Idle ? 1 : 0;
+                _csv.WriteLine($"{Time.frameCount},{gpuMs:F3},{rtMs:F3},{boidCount},{configuration},{isoActive}");
             }
         }
 
-        // ── Isolation key ─────────────────────────────────────────────────────
         if (Input.GetKeyDown(isolationKey) && _isoState == IsoState.Idle)
             StartIsolation();
 
@@ -126,10 +136,10 @@ public class StainedGlassProfiler : MonoBehaviour
         _targetRenderers = FindStainedGlassRenderers();
         if (_targetRenderers.Length == 0)
         {
-            Debug.LogWarning("[StainedGlassProfiler] No renderers found with shader matching '" + shaderNameFilter + "'.");
+            Debug.LogWarning($"[StainedGlassProfiler] No renderers found matching '{shaderNameFilter}'.");
             return;
         }
-        Debug.Log($"[StainedGlassProfiler] Isolation started on {_targetRenderers.Length} renderer(s).");
+        Debug.Log($"[StainedGlassProfiler] Isolation started — {_targetRenderers.Length} renderer(s).");
         _isoState = IsoState.BaselineWait;
         _isoFrameCounter = 0;
         _isoBaseline = 0;
@@ -144,7 +154,6 @@ public class StainedGlassProfiler : MonoBehaviour
         switch (_isoState)
         {
             case IsoState.BaselineWait:
-                // Collect baseline (shader ON) for half the hold window
                 _isoBaseline += gpuMs;
                 if (_isoFrameCounter >= isolationHoldFrames / 2)
                 {
@@ -162,11 +171,15 @@ public class StainedGlassProfiler : MonoBehaviour
                     _isoShaderOff /= (double)isolationHoldFrames;
                     SetStainedGlassEnabled(true);
                     _lastIsolationCost = _isoBaseline - _isoShaderOff;
-                    Debug.Log($"[StainedGlassProfiler] Isolation result — Baseline: {_isoBaseline:F3} ms | " +
-                              $"Without shader: {_isoShaderOff:F3} ms | " +
-                              $"Approx shader cost: {_lastIsolationCost:F3} ms");
+
+                    Debug.Log($"[StainedGlassProfiler] Isolation — baseline: {_isoBaseline:F3} ms | " +
+                              $"shader off: {_isoShaderOff:F3} ms | cost: {_lastIsolationCost:F3} ms");
+
                     if (logToCSV && _csv != null)
-                        _csv.WriteLine($"# ISOLATION,baseline_ms={_isoBaseline:F3},shaderOff_ms={_isoShaderOff:F3},cost_ms={_lastIsolationCost:F3}");
+                        _csv.WriteLine($"# ISOLATION,baseline_ms={_isoBaseline:F3}," +
+                                       $"shaderOff_ms={_isoShaderOff:F3},cost_ms={_lastIsolationCost:F3}," +
+                                       $"config={configuration},boids={boidCount}");
+
                     _isoState = IsoState.Idle;
                 }
                 break;
@@ -202,8 +215,7 @@ public class StainedGlassProfiler : MonoBehaviour
         long sum = 0;
         for (int i = 0; i < recorder.Count; i++)
             sum += recorder.GetSample(i).Value;
-        // nanoseconds → milliseconds
-        return (sum / (double)recorder.Count) * 1e-6;
+        return (sum / (double)recorder.Count) * 1e-6; // nanoseconds → milliseconds
     }
 
     // ── CSV ───────────────────────────────────────────────────────────────────
@@ -213,10 +225,18 @@ public class StainedGlassProfiler : MonoBehaviour
         string ts = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
         _csvPath = Path.Combine(Application.dataPath, $"{csvFilePrefix}_{ts}.csv");
         _csv = new StreamWriter(_csvPath, false, Encoding.UTF8);
+
+        // Header block — parsed by graph_profiler.py to populate figure captions and the LaTeX table
         _csv.WriteLine("# StainedGlass Shader Profiler");
-        _csv.WriteLine($"# Shader filter: {shaderNameFilter}");
-        _csv.WriteLine($"# Recorded: {System.DateTime.Now}");
-        _csv.WriteLine("Frame,GPU_ms,RenderThread_ms,IsolationActive");
+        _csv.WriteLine($"# Configuration: {configuration}");
+        _csv.WriteLine($"# BoidCount: {boidCount}");
+        _csv.WriteLine($"# GPU: {SystemInfo.graphicsDeviceName}");
+        _csv.WriteLine($"# CPU: {SystemInfo.processorType}");
+        _csv.WriteLine($"# RAM_MB: {SystemInfo.systemMemorySize}");
+        _csv.WriteLine($"# UnityVersion: {Application.unityVersion}");
+        _csv.WriteLine($"# Recorded: {System.DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        _csv.WriteLine("Frame,GPU_ms,RenderThread_ms,BoidCount,Configuration,IsolationActive");
+
         Debug.Log($"[StainedGlassProfiler] CSV → {_csvPath}");
     }
 
@@ -239,7 +259,7 @@ public class StainedGlassProfiler : MonoBehaviour
         {
             _boxStyle = new GUIStyle(GUI.skin.box)
             {
-                fontSize = 13,
+                fontSize  = 13,
                 alignment = TextAnchor.UpperLeft,
                 richText  = true,
                 padding   = new RectOffset(12, 12, 10, 10)
@@ -252,6 +272,7 @@ public class StainedGlassProfiler : MonoBehaviour
         if (_frame < warmupFrames)
         {
             _sb.AppendLine($"<b>StainedGlass Profiler</b>  warming up {_frame}/{warmupFrames}");
+            _sb.AppendLine($"Config: <b>{configuration}</b>   Boids: <b>{boidCount}</b>");
         }
         else
         {
@@ -260,6 +281,7 @@ public class StainedGlassProfiler : MonoBehaviour
             double max = _allTimeMax == double.MinValue ? 0 : _allTimeMax;
 
             _sb.AppendLine("<b>═══ StainedGlass Shader Profiler ═══</b>");
+            _sb.AppendLine($"<color=lime>Config: <b>{configuration}</b>   Boids: <b>{boidCount}</b></color>");
             _sb.AppendLine($"GPU  avg  <b>{avg:F2} ms</b>  ({(avg > 0 ? 1000.0 / avg : 0):F0} fps equiv.)");
             _sb.AppendLine($"GPU  min  {min:F2} ms   max  {max:F2} ms");
             _sb.AppendLine($"Samples: {_totalSamples}   Window: {_gpuWindow.Count}/{rollingWindow}");
@@ -267,7 +289,7 @@ public class StainedGlassProfiler : MonoBehaviour
             if (_isoState != IsoState.Idle)
             {
                 string phase = _isoState == IsoState.BaselineWait ? "measuring baseline..." : "shader OFF...";
-                _sb.AppendLine($"<color=yellow>⏱ Isolation: {phase} ({_isoFrameCounter}f)</color>");
+                _sb.AppendLine($"<color=yellow>Isolation: {phase} ({_isoFrameCounter}f)</color>");
             }
             else if (!double.IsNaN(_lastIsolationCost))
             {
@@ -279,10 +301,10 @@ public class StainedGlassProfiler : MonoBehaviour
             }
 
             if (logToCSV && _csvPath != null)
-                _sb.AppendLine($"<color=grey>CSV: {Path.GetFileName(_csvPath)}</color>");
+                _sb.AppendLine($"<color=grey>{Path.GetFileName(_csvPath)}</color>");
         }
 
-        float w = 370, h = 145;
+        float w = 400, h = 175;
         GUI.Box(new Rect(10, 10, w, h), _sb.ToString(), _boxStyle);
     }
 }

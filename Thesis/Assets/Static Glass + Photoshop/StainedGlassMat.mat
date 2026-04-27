@@ -8,8 +8,8 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: StainedGlassMat
-  m_Shader: {fileID: -6465566751694194690, guid: dd3149ae19d084a70af5437f4f427199, type: 3}
-  m_Parent: {fileID: 2100000, guid: 46ac83dedb52e46c2a5d820d7c5a8abd, type: 2}
+  m_Shader: {fileID: -6465566751694194690, guid: 31617dbaa3af76144b00c7ac5c908052, type: 3}
+  m_Parent: {fileID: 2100000, guid: 3a0a4808883bc8b419691f29685de20b, type: 2}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords: []
