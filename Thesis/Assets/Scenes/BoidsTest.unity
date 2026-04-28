@@ -472,9 +472,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 67672e28fe4d34645bae51082158a8d7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StainedGlassProfiler
-  configuration: 2
+  configuration: 1
   boidCount: 500
-  shaderNameFilter: DynamicShader
+  shaderNameFilter: StaticShader
   warmupFrames: 30
   rollingWindow: 120
   isolationKey: 105
@@ -725,6 +725,96 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: -0, z: 0}
   m_LocalScale: {x: 20, y: 20, z: 20}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1133542328
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1133542332}
+  - component: {fileID: 1133542331}
+  - component: {fileID: 1133542330}
+  - component: {fileID: 1133542329}
+  m_Layer: 0
+  m_Name: FlockManager (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &1133542329
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1133542328}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a304e6bad23341709824e51281fa74a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FlockManager
+  settings: {fileID: 11400000, guid: d898b446af454403f9c3c11978d38ef1, type: 2}
+  boidPrefab: {fileID: 5951144027337224860, guid: 2adb67aae925317469f181795c7b4945, type: 3}
+  windowWidth: 10
+  windowHeight: 8
+  fractureSeed: 42
+  shardMaterial: {fileID: 0}
+  drawGizmos: 1
+--- !u!114 &1133542330
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1133542328}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dddf14c59d5b83144988f2a70b2089ef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ImageToGlassPipeline
+  sourceImage: {fileID: 2800000, guid: 620fce6e474534889abcf80a303d23f1, type: 3}
+  windowScale: 10
+  fractureSeed: 42
+  shardMaterialTemplate: {fileID: 2100000, guid: 730ea7f1cb2d744b89a6c800a99bfa22, type: 2}
+  flockManager: {fileID: 1133542331}
+  backgroundPlaneRenderer: {fileID: 0}
+--- !u!114 &1133542331
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1133542328}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a304e6bad23341709824e51281fa74a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FlockManager
+  settings: {fileID: 11400000, guid: 88080c65cc7e245dda64e475c2079af1, type: 2}
+  boidPrefab: {fileID: 5951144027337224860, guid: 2adb67aae925317469f181795c7b4945, type: 3}
+  windowWidth: 10
+  windowHeight: 8
+  fractureSeed: 42
+  shardMaterial: {fileID: 0}
+  drawGizmos: 1
+--- !u!4 &1133542332
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1133542328}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: -0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -1700,6 +1790,7 @@ SceneRoots:
   - {fileID: 750558655}
   - {fileID: 1343490604}
   - {fileID: 1605708320}
+  - {fileID: 1133542332}
   - {fileID: 2023694732}
   - {fileID: 156414634}
   - {fileID: 1210458872}

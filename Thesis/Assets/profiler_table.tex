@@ -1,0 +1,14 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Measured per-frame GPU cost by rendering configuration. Values are mean~$\pm$~1\,s.d.\ over recorded frames. Hardware: Apple M2, Apple M2, 16\,GB RAM.}
+  \label{tab:frame-cost}
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Configuration} & \textbf{Mean (ms)} & \textbf{Std (ms)} & \textbf{Min (ms)} & \textbf{Max (ms)} & \textbf{p95 (ms)} \\
+    \midrule
+    Static & 2.14 & 0.29 & 0.09 & 8.59 & 2.51 \\
+    Dynamic & 2.26 & 0.43 & 0.89 & 10.42 & 2.78 \\
+    Hybrid & 2.65 & 0.98 & 0.55 & 8.62 & 4.60 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
