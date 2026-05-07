@@ -4,70 +4,52 @@ using System.Text;
 using UnityEngine;
 using Unity.Profiling;
 
-public enum ConfigLabel { Static, Dynamic, Hybrid }
+public enum ShaderMode { Static, Dynamic, Hybrid }
 
-/// <summary>
-/// Records per-frame GPU cost for three named rendering configurations.
-/// Each run produces a CSV that graph_profiler.py converts into thesis figures
-/// and a LaTeX table.
-///
-/// Workflow:
-///   1. Set Configuration and BoidCount in the Inspector for this run.
-///   2. Enter Play mode; let warmup complete (overlay turns green).
-///   3. Press [I] to run an isolation measurement, then exit Play.
-///   4. Repeat for each configuration (Static / Dynamic / Hybrid).
-///   5. Run graph_profiler.py on all three CSVs.
-/// </summary>
 [AddComponentMenu("Profiling/Stained Glass Shader Profiler")]
 public class StainedGlassProfiler : MonoBehaviour
 {
     [Header("Experiment")]
-    [Tooltip("Which rendering configuration is active in this scene.")]
-    public ConfigLabel configuration = ConfigLabel.Hybrid;
-    [Tooltip("Number of active boid agents. Set manually to match your BoidManager.")]
     public int boidCount = 500;
+    public ShaderMode shaderMode = ShaderMode.Static;
 
-    [Header("Shader Filter")]
-    public string shaderNameFilter = "StainedGlass";
-
-    [Header("Sampling")]
+    [Header("Timing")]
     [Tooltip("Frames to skip before recording begins")]
-    public int warmupFrames = 30;
-    [Tooltip("Rolling average window size in frames")]
+    public int warmupFrames = 60;
+    [Tooltip("Seconds to record GPU data")]
+    public float recordingDuration = 30f;
+    [Tooltip("Rolling average window size in frames (display only)")]
     public int rollingWindow = 120;
-
-    [Header("Isolation Mode")]
-    [Tooltip("Key to trigger one isolation measurement cycle")]
-    public KeyCode isolationKey = KeyCode.I;
-    [Tooltip("Frames to hold the shader disabled during isolation")]
-    public int isolationHoldFrames = 60;
 
     [Header("Output")]
     public bool logToCSV = true;
-    [Tooltip("Disable to hide the on-screen overlay")]
     public bool showOverlay = true;
-    public string csvFilePrefix = "StainedGlassProfile";
+
+    public bool IsDone => _phase == Phase.Done;
+    public string CsvPath => _csvPath;
 
     // ── Profiler recorders ────────────────────────────────────────────────────
     private ProfilerRecorder _gpuRecorder;
     private ProfilerRecorder _renderThreadRecorder;
 
-    // ── Stats ─────────────────────────────────────────────────────────────────
+    // ── Phase state ───────────────────────────────────────────────────────────
+    private enum Phase { Warmup, Recording, Done }
+    private Phase _phase = Phase.Warmup;
+    private int _frame;
+    private float _phaseStart;
+    private float _elapsed;
+
+    // per-phase accumulators
+    private double _phaseGpuSum;
+    private long   _phaseSamples;
+
+    // final average
+    private double _recordingAvg;
+
+    // rolling window for overlay display
     private readonly Queue<double> _gpuWindow = new Queue<double>();
     private double _windowSum;
-    private double _allTimeMin = double.MaxValue;
-    private double _allTimeMax = double.MinValue;
-    private long _totalSamples;
-    private int _frame;
-
-    // ── Isolation state ───────────────────────────────────────────────────────
-    private enum IsoState { Idle, BaselineWait, ShaderOff }
-    private IsoState _isoState = IsoState.Idle;
-    private int _isoFrameCounter;
-    private double _isoBaseline;
-    private double _isoShaderOff;
-    private double _lastIsolationCost = double.NaN;
-    private Renderer[] _targetRenderers;
+    private long   _totalSamples;
 
     // ── CSV ───────────────────────────────────────────────────────────────────
     private StreamWriter _csv;
@@ -84,10 +66,11 @@ public class StainedGlassProfiler : MonoBehaviour
         _gpuRecorder          = ProfilerRecorder.StartNew(ProfilerCategory.Render,   "GPU Frame Time", 8);
         _renderThreadRecorder = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "Render Thread",  8);
 
-        if (logToCSV) OpenCSV();
+        _phase = Phase.Warmup;
+        _frame = 0;
 
-        Debug.Log($"[StainedGlassProfiler] Config={configuration} Boids={boidCount}. " +
-                  $"Press [{isolationKey}] for isolation measurement.");
+        Debug.Log($"[StainedGlassProfiler] Shader={shaderMode}  Boids={boidCount}  " +
+                  $"Warmup={warmupFrames}frames  Recording={recordingDuration}s");
     }
 
     void OnDisable()
@@ -100,7 +83,16 @@ public class StainedGlassProfiler : MonoBehaviour
     void Update()
     {
         _frame++;
-        if (_frame < warmupFrames) return;
+
+        if (_phase == Phase.Warmup)
+        {
+            if (_frame >= warmupFrames) EnterPhase(Phase.Recording);
+            return;
+        }
+
+        if (_phase == Phase.Done) return;
+
+        _elapsed = Time.realtimeSinceStartup - _phaseStart;
 
         double gpuMs = SampleRecorder(_gpuRecorder);
 
@@ -110,104 +102,65 @@ public class StainedGlassProfiler : MonoBehaviour
             _windowSum += gpuMs;
             if (_gpuWindow.Count > rollingWindow)
                 _windowSum -= _gpuWindow.Dequeue();
-
-            _allTimeMin = System.Math.Min(_allTimeMin, gpuMs);
-            _allTimeMax = System.Math.Max(_allTimeMax, gpuMs);
             _totalSamples++;
+        }
+
+        if (_elapsed >= recordingDuration)
+        {
+            FinishPhase();
+            return;
+        }
+
+        if (gpuMs > 0)
+        {
+            _phaseGpuSum += gpuMs;
+            _phaseSamples++;
 
             if (logToCSV && _csv != null)
             {
                 double rtMs = SampleRecorder(_renderThreadRecorder);
-                int isoActive = _isoState != IsoState.Idle ? 1 : 0;
-                _csv.WriteLine($"{Time.frameCount},{gpuMs:F3},{rtMs:F3},{boidCount},{configuration},{isoActive}");
+                _csv.WriteLine($"{Time.frameCount},{_elapsed:F4},{gpuMs:F3},{rtMs:F3},{boidCount},{shaderMode}");
             }
         }
-
-        if (Input.GetKeyDown(isolationKey) && _isoState == IsoState.Idle)
-            StartIsolation();
-
-        TickIsolation(gpuMs);
     }
 
-    // ── Isolation logic ───────────────────────────────────────────────────────
+    // ── Phase transitions ─────────────────────────────────────────────────────
 
-    void StartIsolation()
+    void EnterPhase(Phase next)
     {
-        _targetRenderers = FindStainedGlassRenderers();
-        if (_targetRenderers.Length == 0)
-        {
-            Debug.LogWarning($"[StainedGlassProfiler] No renderers found matching '{shaderNameFilter}'.");
-            return;
-        }
-        Debug.Log($"[StainedGlassProfiler] Isolation started — {_targetRenderers.Length} renderer(s).");
-        _isoState = IsoState.BaselineWait;
-        _isoFrameCounter = 0;
-        _isoBaseline = 0;
-        _isoShaderOff = 0;
-    }
+        _phase        = next;
+        _phaseStart   = Time.realtimeSinceStartup;
+        _phaseGpuSum  = 0;
+        _phaseSamples = 0;
 
-    void TickIsolation(double gpuMs)
-    {
-        if (_isoState == IsoState.Idle) return;
-        _isoFrameCounter++;
-
-        switch (_isoState)
+        switch (next)
         {
-            case IsoState.BaselineWait:
-                _isoBaseline += gpuMs;
-                if (_isoFrameCounter >= isolationHoldFrames / 2)
-                {
-                    _isoBaseline /= (isolationHoldFrames / 2.0);
-                    SetStainedGlassEnabled(false);
-                    _isoFrameCounter = 0;
-                    _isoState = IsoState.ShaderOff;
-                }
+            case Phase.Recording:
+                if (logToCSV) OpenCSV();
+                Debug.Log("[StainedGlassProfiler] Warmup done — recording.");
                 break;
-
-            case IsoState.ShaderOff:
-                _isoShaderOff += gpuMs;
-                if (_isoFrameCounter >= isolationHoldFrames)
-                {
-                    _isoShaderOff /= (double)isolationHoldFrames;
-                    SetStainedGlassEnabled(true);
-                    _lastIsolationCost = _isoBaseline - _isoShaderOff;
-
-                    Debug.Log($"[StainedGlassProfiler] Isolation — baseline: {_isoBaseline:F3} ms | " +
-                              $"shader off: {_isoShaderOff:F3} ms | cost: {_lastIsolationCost:F3} ms");
-
-                    if (logToCSV && _csv != null)
-                        _csv.WriteLine($"# ISOLATION,baseline_ms={_isoBaseline:F3}," +
-                                       $"shaderOff_ms={_isoShaderOff:F3},cost_ms={_lastIsolationCost:F3}," +
-                                       $"config={configuration},boids={boidCount}");
-
-                    _isoState = IsoState.Idle;
-                }
+            case Phase.Done:
+                WriteSummary();
+                CloseCSV();
+                Debug.Log("[StainedGlassProfiler] Recording complete.");
                 break;
         }
     }
 
-    Renderer[] FindStainedGlassRenderers()
+    void FinishPhase()
     {
-        var results = new List<Renderer>();
-        foreach (var r in FindObjectsOfType<Renderer>())
-            foreach (var mat in r.sharedMaterials)
-                if (mat != null && mat.shader != null &&
-                    mat.shader.name.IndexOf(shaderNameFilter, System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    results.Add(r);
-                    break;
-                }
-        return results.ToArray();
+        _recordingAvg = _phaseSamples > 0 ? _phaseGpuSum / _phaseSamples : 0;
+        Debug.Log($"[StainedGlassProfiler] {shaderMode} avg = {_recordingAvg:F3} ms  ({_phaseSamples} samples)");
+        EnterPhase(Phase.Done);
     }
 
-    void SetStainedGlassEnabled(bool enabled)
+    void WriteSummary()
     {
-        if (_targetRenderers == null) return;
-        foreach (var r in _targetRenderers)
-            if (r != null) r.enabled = enabled;
+        if (_csv == null) return;
+        _csv.WriteLine($"# SUMMARY,shader={shaderMode},avg_gpu_ms={_recordingAvg:F3},boids={boidCount}");
     }
 
-    // ── Profiler helper ───────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     static double SampleRecorder(ProfilerRecorder recorder)
     {
@@ -215,7 +168,7 @@ public class StainedGlassProfiler : MonoBehaviour
         long sum = 0;
         for (int i = 0; i < recorder.Count; i++)
             sum += recorder.GetSample(i).Value;
-        return (sum / (double)recorder.Count) * 1e-6; // nanoseconds → milliseconds
+        return (sum / (double)recorder.Count) * 1e-6;
     }
 
     // ── CSV ───────────────────────────────────────────────────────────────────
@@ -223,19 +176,19 @@ public class StainedGlassProfiler : MonoBehaviour
     void OpenCSV()
     {
         string ts = System.DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        _csvPath = Path.Combine(Application.dataPath, $"{csvFilePrefix}_{ts}.csv");
+        _csvPath = Path.Combine(Application.dataPath, $"{shaderMode}{boidCount}_{ts}.csv");
         _csv = new StreamWriter(_csvPath, false, Encoding.UTF8);
 
-        // Header block — parsed by graph_profiler.py to populate figure captions and the LaTeX table
         _csv.WriteLine("# StainedGlass Shader Profiler");
-        _csv.WriteLine($"# Configuration: {configuration}");
+        _csv.WriteLine($"# ShaderMode: {shaderMode}");
         _csv.WriteLine($"# BoidCount: {boidCount}");
+        _csv.WriteLine($"# RecordingDuration_s: {recordingDuration}");
         _csv.WriteLine($"# GPU: {SystemInfo.graphicsDeviceName}");
         _csv.WriteLine($"# CPU: {SystemInfo.processorType}");
         _csv.WriteLine($"# RAM_MB: {SystemInfo.systemMemorySize}");
         _csv.WriteLine($"# UnityVersion: {Application.unityVersion}");
         _csv.WriteLine($"# Recorded: {System.DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        _csv.WriteLine("Frame,GPU_ms,RenderThread_ms,BoidCount,Configuration,IsolationActive");
+        _csv.WriteLine("Frame,PhaseTime_s,GPU_ms,RenderThread_ms,BoidCount,ShaderMode");
 
         Debug.Log($"[StainedGlassProfiler] CSV → {_csvPath}");
     }
@@ -246,7 +199,8 @@ public class StainedGlassProfiler : MonoBehaviour
         _csv.Flush();
         _csv.Close();
         _csv = null;
-        Debug.Log($"[StainedGlassProfiler] CSV saved → {_csvPath}");
+        if (_csvPath != null)
+            Debug.Log($"[StainedGlassProfiler] CSV saved → {_csvPath}");
     }
 
     // ── Overlay ───────────────────────────────────────────────────────────────
@@ -268,43 +222,37 @@ public class StainedGlassProfiler : MonoBehaviour
         }
 
         _sb.Clear();
+        _sb.AppendLine("<b>═══ StainedGlass Shader Profiler ═══</b>");
+        _sb.AppendLine($"Shader: <b>{shaderMode}</b>   Boids: <b>{boidCount}</b>");
 
-        if (_frame < warmupFrames)
+        switch (_phase)
         {
-            _sb.AppendLine($"<b>StainedGlass Profiler</b>  warming up {_frame}/{warmupFrames}");
-            _sb.AppendLine($"Config: <b>{configuration}</b>   Boids: <b>{boidCount}</b>");
-        }
-        else
-        {
-            double avg = _gpuWindow.Count > 0 ? _windowSum / _gpuWindow.Count : 0;
-            double min = _allTimeMin == double.MaxValue ? 0 : _allTimeMin;
-            double max = _allTimeMax == double.MinValue ? 0 : _allTimeMax;
+            case Phase.Warmup:
+                _sb.AppendLine($"<color=yellow>Warming up…  {_frame} / {warmupFrames} frames</color>");
+                break;
 
-            _sb.AppendLine("<b>═══ StainedGlass Shader Profiler ═══</b>");
-            _sb.AppendLine($"<color=lime>Config: <b>{configuration}</b>   Boids: <b>{boidCount}</b></color>");
-            _sb.AppendLine($"GPU  avg  <b>{avg:F2} ms</b>  ({(avg > 0 ? 1000.0 / avg : 0):F0} fps equiv.)");
-            _sb.AppendLine($"GPU  min  {min:F2} ms   max  {max:F2} ms");
-            _sb.AppendLine($"Samples: {_totalSamples}   Window: {_gpuWindow.Count}/{rollingWindow}");
+            case Phase.Done:
+                _sb.AppendLine("<color=cyan><b>Complete</b></color>");
+                _sb.AppendLine($"Avg GPU:   <b>{_recordingAvg:F2} ms</b>");
+                _sb.AppendLine($"Samples:   {_totalSamples}");
+                if (_csvPath != null) _sb.AppendLine($"<color=grey>{Path.GetFileName(_csvPath)}</color>");
+                break;
 
-            if (_isoState != IsoState.Idle)
+            default:
             {
-                string phase = _isoState == IsoState.BaselineWait ? "measuring baseline..." : "shader OFF...";
-                _sb.AppendLine($"<color=yellow>Isolation: {phase} ({_isoFrameCounter}f)</color>");
-            }
-            else if (!double.IsNaN(_lastIsolationCost))
-            {
-                _sb.AppendLine($"<color=cyan>Shader cost ≈ <b>{_lastIsolationCost:F2} ms</b>  (press {isolationKey} to re-run)</color>");
-            }
-            else
-            {
-                _sb.AppendLine($"<color=grey>Press [{isolationKey}] to isolate shader cost</color>");
-            }
+                float remaining = recordingDuration - _elapsed;
+                double dispAvg  = _gpuWindow.Count > 0 ? _windowSum / _gpuWindow.Count : 0;
 
-            if (logToCSV && _csvPath != null)
-                _sb.AppendLine($"<color=grey>{Path.GetFileName(_csvPath)}</color>");
+                _sb.AppendLine($"<color=lime><b>Recording</b>  {_elapsed:F1}s / {recordingDuration}s  ({remaining:F1}s left)</color>");
+                _sb.AppendLine($"GPU avg  <b>{dispAvg:F2} ms</b>  ({(dispAvg > 0 ? 1000.0 / dispAvg : 0):F0} fps equiv.)");
+                _sb.AppendLine($"Samples: {_totalSamples}");
+                if (logToCSV && _csvPath != null)
+                    _sb.AppendLine($"<color=grey>{Path.GetFileName(_csvPath)}</color>");
+                break;
+            }
         }
 
-        float w = 400, h = 175;
+        float w = 380, h = 160;
         GUI.Box(new Rect(10, 10, w, h), _sb.ToString(), _boxStyle);
     }
 }

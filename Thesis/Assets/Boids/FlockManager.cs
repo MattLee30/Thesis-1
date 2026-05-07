@@ -20,6 +20,10 @@ public class FlockManager : MonoBehaviour
     [Tooltip("Shared material applied to every shard. Populated automatically by ImageToGlassPipeline.")]
     [SerializeField] private Material shardMaterial;
 
+    [Header("Spawning")]
+    [Tooltip("Number of boids to spawn. Overrides the flockSize value in BoidSettings.")]
+    [SerializeField] private int spawnCount = 50;
+
     [Header("Debug")]
     [SerializeField] private bool drawGizmos = true;
 
@@ -81,6 +85,17 @@ public class FlockManager : MonoBehaviour
     }
 
     public void SetShardMaterial(Material mat) => shardMaterial = mat;
+
+    public void Respawn(int count, Material mat)
+    {
+        for (int i = transform.childCount - 1; i >= 0; i--)
+            Destroy(transform.GetChild(i).gameObject);
+        boids.Clear();
+        foreignBoids.Clear();
+        spawnCount    = count;
+        shardMaterial = mat;
+        SpawnFlock();
+    }
 
     public void SetForeignBoids(List<BoidAgent> foreign)
     {
@@ -166,9 +181,9 @@ public class FlockManager : MonoBehaviour
         // that fits flush with all its neighbours when assembled into the window.
         WindowFractureLayout.ShardData[] shards = null;
         if (boidPrefab.GetComponent<GlassShardMesh>() != null)
-            shards = WindowFractureLayout.Generate(settings.flockSize, windowWidth, windowHeight, fractureSeed);
+            shards = WindowFractureLayout.Generate(spawnCount, windowWidth, windowHeight, fractureSeed);
 
-        for (int i = 0; i < settings.flockSize; i++)
+        for (int i = 0; i < spawnCount; i++)
         {
             Vector3 spawnPos      = transform.position + Random.insideUnitSphere * settings.spawnRadius;
             Vector3 startVelocity = Random.onUnitSphere * settings.maxSpeed * 0.5f;

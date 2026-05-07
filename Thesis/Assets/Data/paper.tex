@@ -1,0 +1,545 @@
+\documentclass[12pt]{article}
+
+% Basic packages only
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{float}
+
+\begin{document}
+% \onehalfspacing
+\doublespacing
+
+% Front matter uses roman numerals
+\pagenumbering{roman}
+
+% ── TITLE PAGE ────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \thispagestyle{empty}
+
+  {\large Loyola Marymount University, Los Angeles, California}
+
+  \vspace{1.5cm}
+
+  {\Huge\bfseries
+    Hybrid Rendering: Combining Ray-Tracing\\[6pt]
+    with Static Techniques as Applied to\\[6pt]
+    Rendering Stained Glass
+  }
+
+  \vspace{1.5cm}
+
+  {A thesis submitted in partial satisfaction of the requirements for the degree Master of Science in Computer Science}
+
+  \vspace{1.5cm}
+
+  {by}\\[8pt]
+  {\LARGE\bfseries Matthew Lee}
+
+  \vfill
+
+  {April 2026}
+\end{titlepage}
+
+% ── COMMITTEE APPROVAL ────────────────────────────────────────────
+\clearpage
+\section*{Approval Page}
+
+The thesis of Matthew Lee is approved.
+
+\vspace{2cm}
+\noindent\underline{\hspace{8cm}}\\[4pt]
+Dr.\ Ray Toal, Thesis Advisor
+
+\vspace{1.5cm}
+\noindent\underline{\hspace{8cm}}\\[4pt]
+Committee Member
+
+\vspace{1.5cm}
+\noindent\underline{\hspace{8cm}}\\[4pt]
+Committee Member
+
+% ── ABSTRACT ──────────────────────────────────────────────────────
+\clearpage
+\section*{Abstract}
+
+Real-time rendering pipelines must balance visual fidelity against computational cost. This thesis presents a hybrid rendering approach that combines pre-baked static lightmaps with dynamic Spherical Harmonics lighting and a projected Color Volume render texture. The technique is demonstrated through a Unity Universal Render Pipeline (URP) shader applied to a GPU-instanced boid simulation rendered against a stained-glass window. Performance measurements across four agent populations (100, 250, 500, and 1000 boids) reveal that all three configurations perform comparably at low agent counts, but diverge sharply at scale: the static configuration degrades to 11.38\,ms at 1000 boids while the hybrid and dynamic configurations hold at 3.71\,ms and 4.66\,ms respectively. The results demonstrate that assigning shader configurations per object class --- static lightmap for stationary geometry and Spherical Harmonics with a Color Volume for GPU-instanced agents --- is not only practically viable but constitutes the most GPU-efficient strategy at scale, delivering equivalent or superior frame cost to a purely dynamic pipeline at every tested agent count.
+
+% ══════════════════════════════════════════════════════════════════
+% Table of Contents
+% ══════════════════════════════════════════════════════════════════
+\clearpage
+\tableofcontents
+
+% ── ACKNOWLEDGEMENTS ──────────────────────────────────────────────
+\clearpage
+\section*{Acknowledgements}
+
+Many thanks to Dr.\ Ray Toal for his invaluable guidance and mentorship throughout the development of this thesis. Gratitude is also extended to fellow project members Grayson von Goetz und Schwanenfleiss and Clifford Phillips for their thoughtful contributions to the overall project.
+
+% Switch to arabic numbering for the body
+\clearpage
+\pagenumbering{arabic}
+
+% ══════════════════════════════════════════════════════════════════
+% SECTION 1: INTRODUCTION
+%══════════════════════════════════════════════════════════════════
+\clearpage
+\section{Introduction}
+
+
+Hybrid rendering approaches are not a new technology, particularly within game rendering pipelines. Conventional approaches consist of substituting ray tracing for rasterization, a technique that is computationally lighter at the tradeoff of reduced realism in light-ray bending and global illumination.
+
+Real-time rendering pipelines must balance visual fidelity against computational cost. Two canonical strategies (static and dynamic lighting) each offer distinct trade-offs that make neither sufficient on its own for scenes containing both stationary geometry and rapidly moving agents such as boids.
+
+Static lighting utilizes pre-computed, or baked, lightmaps in order to impose negligible runtime overhead ($\approx 0.1\,\text{ms}$ per frame), since illumination data is stored before runtime in the applied textures, and retrieved later when called. However, since baking is a process which must be completed before compiling, this approach becomes unviable for fast moving objects, whose lighting data would ideally be calculated during runtime.
+
+Dynamic lighting, on the other hand, is fully responsive to environment changes, but carries a cost which scales with the rate of positional change of each object. However, for GPU-instanced agents such as boids, which may number in the hundreds to thousands and \textbf{must} update their position each frame, fully dynamic lighting can be extremely computationally costly. Additionally, dynamic lighting generally struggles to match the same level of detail that a pre-rendered lightmap can achieve.
+
+The central thesis of this work is that a blend of current ray-tracing software with static rendering techniques is not only feasible, but constitutes a viable approach in the modern rendering landscape with minimal computational drawbacks. The render texture which will be examined in this paper centers on the idea of pre-baking a lightmap for the base lighting, and applying all other detail computations during runtime, with a negligible increase in computational cost.
+
+%Rephrase later
+This will be achieved through a demonstration of applying a hybrid rendering shader built in Unity's Universal Rendering Pipeline (URP) applied to CJ Phillip's boids.
+
+The rest of this thesis is organized as follows. Section~\ref{sec:background} surveys relevant prior work, including distributed hybrid rendering, spherical harmonics lighting, boid simulation, and light probes. Section~\ref{sec:methods} describes the hybrid pipeline design and implementation. Section~\ref{sec:tradeoffs} analyzes the trade-offs among the three rendering configurations. Section~\ref{sec:performance} presents performance measurements and analysis. The thesis concludes with a summary of results, limitations, and directions for future research.
+
+% ══════════════════════════════════════════════════════════════════
+% SECTION 2: BACKGROUND
+% ══════════════════════════════════════════════════════════════════
+\clearpage
+\section{Background and Related Work}
+\label{sec:background}
+
+This section details both relevant work which is related to hybrid rendering techniques, as well as a brief background into boid simulations. 
+
+% ══════════════════════════════════════════════════════════════════
+% Hybrid Rendering
+% ══════════════════════════════════════════════════════════════════
+\subsection{Distributed Hybrid Rendering with Real-Time Shadows (DHR+S)}
+\label{subsec:dhrs}
+ 
+Tan et al.\ \cite{TanLowChow2024} present DHR+S, an extension of their earlier Distributed Hybrid Rendering (DHR) framework targeting thin clients such as standalone extended-reality headsets and mobile devices. The central premise of DHR is a division of rendering labour: rasterization runs locally on the client while computationally expensive ray tracing is offloaded to a remote server, with the ray-traced output streamed back over a network connection. DHR+S augments this baseline by adding two shadow-quality improvements --- ray-traced soft shadows and filtered ambient occlusion --- without substantially increasing bandwidth consumption.
+ 
+Soft shadows are produced by introducing bounded directional variance to each shadow ray so that it samples the full emitting surface area of a light source rather than a single central point. For pixels near the silhouettes of occluding objects this produces partial occlusion, yielding a physically plausible penumbra. Ambient occlusion is approximated by casting a small hemisphere of rays from each surface point and computing the fraction that remain unoccluded; only a single byte per pixel is transmitted to encode this value.
+ 
+Because stochastic ray sampling introduces noise at low ray counts, the authors apply a modified version of Spatiotemporal Variance-Guided Filtering (SVGF) \cite{Schied2017}, adapted to use depth and normal differentials rather than luminance as the variance signal.
+ 
+This work is directly relevant to the hybrid rendering strategy explored in this thesis. In particular, the DHR+S treatment of the dynamic--static rendering boundary --- performing expensive ray-traced passes remotely while delegating locally computable rasterization to the client --- mirrors the motivation behind the static-to-dynamic lighting transitions described in Section~\ref{sec:methods}. Where DHR+S distributes the workload spatially across a network, the approach presented here addresses the same fidelity--cost trade-off within a single GPU through selective application of pre-computed lightmaps and runtime Spherical Harmonics.
+
+% ══════════════════════════════════════════════════════════════════
+% Boids
+% ══════════════════════════════════════════════════════════════════
+\subsection{Boids and GPU-Instanced Crowd Simulation}
+The boid model, originally introduced by Reynolds \cite{Reynolds1987}, simulates the emergent flocking behavior of birds through three local steering rules applied independently to each agent: \textit{separation}, which prevents agents from colliding with neighbors; \textit{alignment}, which steers each agent toward the average heading of its local group; and \textit{cohesion}, which pulls each agent toward the average position of its neighbors. Despite the simplicity of these rules, the aggregate behavior of a large population produces convincingly lifelike flocking motion.
+The computational challenge of boid simulation arises from neighbor search: in a naive implementation, each boid must be tested against every other, yielding $O(n^2)$ complexity that quickly becomes prohibitive at scale. GPU implementations address this by encoding boid state --- position, orientation, and force --- into texture maps and performing simulation entirely on the GPU, with a uniform spatial grid used to accelerate neighbor lookups to sub-linear complexity \cite{Silva2008}. At population sizes of tens of thousands of agents, fully GPU-resident simulation and rendering becomes not only feasible but necessary for real-time performance.
+
+This project applies the hybrid lighting shader to the boid simulation developed by C.J. Phillips. Because boids are rendered via GPU instancing --- where a single draw call renders all agents using shared mesh data --- each agent lacks a unique secondary UV channel (\texttt{UV2}), which is a prerequisite for sampling a pre-baked lightmap directly. This constraint is precisely what motivates the use of Spherical Harmonics for the dynamic lighting component of the hybrid pipeline, as described in Sections~\ref{subsec:hybrid-strategy} and~\ref{subsec:technical-components}.
+
+% ══════════════════════════════════════════════════════════════════
+% Spherical Harmonics
+% ══════════════════════════════════════════════════════════════════
+
+\subsection{Spherical Harmonics}
+Because boids are GPU-instanced they possess no secondary UV channel (\texttt{UV2}), and their world-space positions are arbitrary at runtime. Spherical Harmonics --- specifically the nine-coefficient \emph{SH9} basis --- encode incoming radiance at a point across all directions without requiring UV-mapped geometry, making them well-suited for per-instance lighting of instanced meshes \cite{Green2003}.
+A key limitation of SH is their inability to represent high-frequency lighting detail with a small coefficient budget. In practice, the diffuse contribution is well-captured by just a few low-order bands, since the clamped cosine lobe that models Lambertian reflectance concentrates most of its energy in the lowest frequencies. However, restricting diffuse computation to only three SH bands introduces visible ringing artifacts, particularly when illumination is strongly directional \cite{Mezieres2021}. For the purposes of this project, this tradeoff is acceptable: boids are small, fast-moving agents whose lighting is perceived at a distance, so low-frequency approximation artifacts are not perceptually significant.
+SH are evaluated at runtime via Unity's \texttt{SampleSH9} function, which samples the ambient probe baked into the scene. This provides a spatially-varying but computationally cheap estimate of the environmental irradiance at each boid's world-space position, serving as the dynamic lighting input to the hybrid pipeline described in Section~\ref{sec:methods}.
+
+% ══════════════════════════════════════════════════════════════════
+% Light Probes
+% ══════════════════════════════════════════════════════════════════
+\subsection{Light Probes}
+\label{subsec:light-probes}
+
+Light probes are point samples of the incident radiance field stored at
+fixed positions in the scene, typically arranged in a sparse
+three-dimensional grid and baked during a precomputation stage. At
+runtime, each probe's cached radiance is queried and interpolated to
+produce an estimate of indirect illumination at arbitrary world-space
+positions --- including positions belonging to dynamic or GPU-instanced
+geometry that cannot carry its own lightmap UVs. In this sense light
+probes occupy an intermediate position on the static--dynamic rendering
+spectrum: the probe data itself is pre-baked, but the sampling and
+interpolation that produce a final per-object shading value occur
+entirely at runtime.
+
+Classical probe formulations encode only low-frequency diffuse
+irradiance --- typically as a small set of spherical-harmonic
+coefficients per probe --- which is sufficient for soft ambient
+shading but cannot reproduce glossy reflections, parallax-correct
+highlights, or multi-bounce global illumination. Guo et al.\
+\cite{Guo2022} address these limitations directly in \emph{Efficient
+Light Probes for Real-Time Global Illumination}, a probe-based pipeline
+that extends the expressiveness of baked probe data while retaining
+real-time performance. Rather than storing only irradiance, their probes
+cache full radiance information which is then reprojected to arbitrary
+query viewpoints using a gradient-based search procedure. The search
+converges quickly to the correct reprojected sample and, unlike
+nearest-probe or trilinear-weighted lookups, does not introduce the
+parallax errors that typically manifest as drifting highlights or
+misaligned reflections when a shaded point lies far from the sampled
+probe positions.
+
+To compensate for the limited spatial resolution of a sparse probe grid
+and the potentially low per-probe sampling rate, Guo et al.\ pair the
+reprojection step with a lightweight neural image-reconstruction network
+that consumes several G-buffers (surface normals, depth, material
+identifiers) alongside the reprojected probe samples to synthesise a
+high-resolution output. A temporal reprojection strategy and an explicit
+temporal loss term during training suppress flicker across animation
+sequences. The complete pipeline sustains real-time performance
+(above 30 frames per second at $1920 \times 1080$) while reproducing
+glossy reflections with multiple indirect bounces --- effects that are
+normally the exclusive domain of fully dynamic path tracing.
+
+The relevance of this work to the present thesis is twofold. First, it
+reinforces that the boundary between ``static'' and ``dynamic'' lighting
+is not a binary one: probe-based methods occupy a middle ground in which
+baked data is re-interpreted each frame to serve dynamic shading needs,
+exactly the philosophy driving the hybrid pipeline in
+Section~\ref{sec:methods}. Second, because boids are GPU-instanced and
+lack a per-instance \texttt{UV2} channel, they cannot sample a
+pre-baked lightmap directly and must instead rely on spatially-varying
+world-space probes for their dynamic lighting input. The
+\texttt{SampleSH9} calls introduced in
+Section~\ref{subsec:hybrid-strategy} are a lightweight, low-frequency
+instance of exactly the probe-query mechanism formalised by Guo et al.,
+and the design trade-offs they identify --- among probe storage,
+reprojection accuracy, and runtime reconstruction cost --- directly
+inform the decision to use SH9 probes rather than a denser
+radiance-probe representation for the boid agents in this work.
+
+
+% ══════════════════════════════════════════════════════════════════
+% SECTION 3: METHODS
+% ══════════════════════════════════════════════════════════════════
+\clearpage
+\section{Methods}
+\label{sec:methods}
+ 
+\subsection{Problem Formulation}
+\label{subsec:problem-formulation}
+
+The rendering challenge in this work arises from a structural incompatibility between the two object classes in the scene: a stationary stained-glass window panel and a large population of GPU-instanced boid agents representing individual glass shards in flight.
+
+The static window panel is a single mesh with unique UV coordinates (\texttt{UV0}). It can be assigned a fixed source-image texture that is mapped once at scene load and sampled every frame with negligible cost. Its lighting environment is stable enough that Spherical Harmonics probes evaluated at the panel's world-space position provide an adequate approximation of indirect irradiance.
+
+The boid glass shards cannot share this approach. Because all boid meshes are rendered in a single GPU-instanced draw call, every agent shares identical mesh data and therefore carries identical UV coordinates. Assigning a UV-mapped texture would produce visually identical shards with no per-instance variation --- an unrealistic appearance for a population of shattered glass fragments. Furthermore, the shards move through the scene each frame, so their relative position under the stained-glass window changes continuously and must be recomputed at runtime to sample the correct coloured illumination.
+
+The hybrid pipeline resolves this incompatibility by assigning each rendering strategy to the object class for which it is appropriate: a UV-texture-based shader for the static panel, and a procedural Voronoi pattern combined with Spherical Harmonics probes and a projected Color Volume render texture for the instanced boid shards.
+
+\subsection{Pipeline Overview}
+\label{subsec:hybrid-strategy}
+
+The hybrid pipeline is implemented using two distinct Unity Shader Graph assets compiled into three material configurations. The stationary stained-glass window panel uses \texttt{StainedGlassShader.shadergraph}, a texture-based shader that maps a source image onto the glass surface and augments it with screen-space refraction, Fresnel reflection, and Spherical Harmonics ambient lighting. The GPU-instanced boid glass shards use \texttt{StainedGlassShaderDynamic.shadergraph}, which replaces the UV-mapped texture with a procedurally generated Voronoi cellular pattern, but shares the same refraction, Fresnel, SH, and Color Volume pipeline as the static variant. A third material (\texttt{HybridShader.mat}) blends both approaches for the transitional geometry at the window boundary.
+
+The two shaders diverge primarily in how the glass cell pattern is produced, as described in Sections~\ref{subsec:static-path} and~\ref{subsec:dynamic-path}.
+
+\subsection{Static Rendering Path}
+\label{subsec:static-path}
+
+For the stationary stained-glass panel, \texttt{StainedGlassShader.shadergraph} computes the final fragment colour through three concurrent contributions.
+
+First, the source image (\texttt{MainText}) is sampled at the mesh's \texttt{UV0} coordinates to obtain the glass colour pattern. A separate distortion texture (\texttt{DistortionText}) warps the screen-space UV coordinates before sampling Unity's \texttt{SceneColorNode}, producing a transmissive refraction effect in which the scene behind the glass is visible with a colour-dependent warp. The strength of this warp is governed by a \texttt{DistortionStrength} scalar. A Fresnel node modulates view-dependent reflectivity at glancing angles, with intensity controlled by \texttt{FresnelPower}. Surface micro-detail is added via a \texttt{Normal} map attenuated by \texttt{NormalPower}.
+
+Second, the Spherical Harmonics ambient contribution --- evaluated via the custom \texttt{SampleSH.hlsl} function described in Section~\ref{subsec:dynamic-path} --- provides a low-frequency estimate of indirect irradiance at the panel's world-space position.
+
+Third, the Color Volume projective texture fetch described in Section~\ref{subsec:dynamic-path} tints the panel's fragments with the position-dependent coloured light cast by the window itself.
+
+The saturation of the sampled scene colour is post-processed via a \texttt{Saturation} parameter before the final blend, allowing artists to control the intensity of the colour cast without altering the refraction geometry.
+
+\subsection{Dynamic Rendering Path}
+\label{subsec:dynamic-path}
+
+The dynamic path, implemented in \texttt{StainedGlassShaderDynamic.shadergraph}, shares the refraction, Fresnel, normal mapping, SH, and Color Volume pipeline of the static shader but replaces the UV-mapped \texttt{MainText} lookup with a procedurally generated cellular pattern. Because all boid meshes are drawn in a single GPU-instanced call they share identical mesh data and cannot carry unique UV coordinates; a fixed texture would therefore appear identical on every shard. Two Voronoi (Worley) noise nodes, combined via a Blend node, produce a position-dependent cellular pattern that gives each boid shard a distinct glass-cell appearance at runtime without requiring any per-instance texture data.
+
+With the glass cell pattern established, the shader computes indirect irradiance from two complementary sources and combines them.
+
+\subsubsection{Spherical Harmonics Probe}
+
+The world-space surface normal of each fragment is read from the \textbf{Normal Vector} node (in world space) and passed to a custom inline HLSL function \texttt{SampleSH}, defined in \texttt{SampleSH.hlsl}:
+
+\begin{verbatim}
+void SampleSH_float(float3 WorldNormal, out float3 Color)
+{
+    real4 SHCoefficients[7];
+    SHCoefficients[0] = unity_SHAr;  // L1 red
+    SHCoefficients[1] = unity_SHAg;  // L1 green
+    SHCoefficients[2] = unity_SHAb;  // L1 blue
+    SHCoefficients[3] = unity_SHBr;  // L2 red
+    SHCoefficients[4] = unity_SHBg;  // L2 green
+    SHCoefficients[5] = unity_SHBb;  // L2 blue
+    SHCoefficients[6] = unity_SHC;   // L2 shared
+    Color = max(float3(0,0,0),
+                SampleSH9(SHCoefficients, WorldNormal));
+}
+\end{verbatim}
+
+This function reads the seven four-component coefficient arrays that Unity uploads per-object from the nearest light probe (or the interpolated blend of surrounding probes) and evaluates the SH9 basis against the fragment's world-space normal. The result is a low-frequency estimate of the indirect irradiance colour arriving from all directions, clamped to exclude negative radiance values. This estimate captures the broad ambient colour cast by the scene lighting without requiring UV-mapped lightmap data.
+
+\subsubsection{Color Volume Render Texture}
+
+The Spherical Harmonics probe approximates scene-wide indirect illumination but cannot reproduce the position-dependent coloured light that the stained-glass window projects onto objects passing beneath it. To capture this effect, the shader samples a \emph{Color Volume} render texture (\texttt{\_ColorVolumeRT}) via a second custom inline function \texttt{SampleColorVolume}:
+
+\begin{verbatim}
+float4 clipPos = mul(ColorVolumeVP,
+                     float4(worldPos, 1.0));
+float2 uv = clipPos.xy / clipPos.w * 0.5 + 0.5;
+Out = SAMPLE_TEXTURE2D(_ColorVolumeRT,
+                       sampler_ColorVolumeRT, uv).rgb;
+\end{verbatim}
+
+A dedicated camera, oriented to look through the stained-glass window from the light source's perspective, renders the coloured transmittance of the glass into \texttt{\_ColorVolumeRT} each frame. The function \texttt{SampleColorVolume} receives the boid's world-space position, transforms it into the clip space of that camera using the view-projection matrix \texttt{ColorVolumeVP}, converts to UV coordinates via the standard perspective divide, and reads the corresponding texel. The resulting RGB value encodes the colour and intensity of the stained-glass light that would fall on an object at that world position. Boids passing through a red pane of glass therefore receive a red tint; boids outside the window's projection receive only the neutral SH contribution.
+
+\subsubsection{Combining SH and Color Volume}
+
+The SH irradiance and Color Volume sample are combined using a Blend node set to \emph{Multiply} mode, which element-wise multiplies the two RGB values. Multiplying the ambient irradiance colour by the colour volume tint preserves the directional character of the SH probe while superimposing the position-dependent stained-glass colouration. A subsequent multiply node applies a brightness scalar (default value 2.0) to restore perceptual luminance after the multiply blend.
+
+
+\subsection{Technical Components}
+\label{subsec:technical-components}
+
+All shading logic is authored in Unity's Shader Graph visual programming environment targeting the Universal Render Pipeline (URP). Shader Graph compiles the node graph to HLSL at build time, ensuring compatibility with URP's render passes. The two computationally non-trivial operations --- SH evaluation and Color Volume projection --- are expressed as Custom Function nodes containing inline HLSL so that they can directly access Unity's per-object constant buffers (\texttt{unity\_SHAr}, \texttt{ColorVolumeVP}, etc.) that are not exposed as standard Shader Graph nodes.
+
+The shaders expose the following artist-facing properties:
+\begin{itemize}
+  \item \texttt{MainText} --- the source image texture mapped onto the glass surface (static shader only; replaced by Voronoi noise in the dynamic shader).
+  \item \texttt{DistortionText} --- a distortion/normal texture that warps screen-space UVs to produce the refraction offset.
+  \item \texttt{Normal} --- a surface normal map applied via a \texttt{NormalStrength} node.
+  \item \texttt{NormalPower} / \texttt{NormalIntensity} --- scalar controlling the influence of the normal map.
+  \item \texttt{Saturation} --- post-processes the saturation of the sampled scene colour.
+  \item \texttt{FresnelPower} --- controls the intensity of view-dependent Fresnel reflection.
+\end{itemize}
+
+Supporting C\# scripts handle the Color Volume camera setup and upload the \texttt{ColorVolumeVP} matrix to the GPU each frame, as well as the \texttt{ImageToGlassPipeline} component which assigns the correct source image texture at scene load time.
+
+% ══════════════════════════════════════════════════════════════════
+% SECTION 4: TRADE-OFFS
+% ══════════════════════════════════════════════════════════════════
+\clearpage
+\section{Trade-offs Between Rendering Approaches}
+\label{sec:tradeoffs}
+
+The three rendering configurations examined in this work --- static lightmap, fully dynamic SH with Color Volume, and hybrid --- each occupy a distinct position in the fidelity-versus-cost design space. This section analyses the qualitative and quantitative trade-offs among them, illustrated by representative renders of the stained-glass panel under each approach.
+
+\subsection{Static Lightmap Rendering}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{Static.png}
+  \caption{Static lightmap rendering of the stained-glass window panel. Pre-baked illumination yields rich, high-fidelity colour and shadow detail at negligible runtime cost.}
+  \label{fig:static}
+\end{figure}
+
+As shown in Figure~\ref{fig:static}, the static lightmap approach produces the richest colour saturation and most detailed shadow distribution of the three configurations. Because the entire illumination solution is computed offline, the baker can afford to use a high sample count, multi-bounce global illumination, and fine texel resolution without any real-time budget constraint. The resulting render exhibits accurate coloured light bleeding between adjacent glass panes and smooth penumbrae at the lead came edges.
+
+The fundamental limitation of this approach is its inability to respond to runtime changes. Any moving object --- including the boid glass shards --- cannot carry baked lightmap data, since GPU instancing precludes unique \texttt{UV2} assignments per agent. Furthermore, any modification to scene geometry or lighting that occurs after the bake step requires a full rebake, which may take several minutes even for moderately complex scenes. The static approach is therefore best suited to geometry that is guaranteed not to move and for which illumination conditions are fixed at authoring time.
+
+
+\subsection{Fully Dynamic Rendering}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{Dynamic.png}
+  \caption{Fully dynamic rendering using Spherical Harmonics probes and the Color Volume render texture. Lighting responds to runtime changes but exhibits softer colour gradients and reduced high-frequency detail compared to the static approach.}
+  \label{fig:dynamic}
+\end{figure}
+
+The dynamic configuration, illustrated in Figure~\ref{fig:dynamic}, replaces the pre-baked lightmap with per-frame SH9 probe evaluation and a Color Volume render texture lookup. This approach is the only one of the three that is compatible with GPU-instanced geometry: because SH coefficients are uploaded per-object from the nearest probe cluster and the Color Volume is a simple projective texture fetch, neither operation requires unique UV coordinates. Boids can therefore receive plausible position-dependent coloured illumination as they move through the volume beneath the stained-glass window.
+
+The visual trade-off is visible in Figure~\ref{fig:dynamic}: the colour gradients are noticeably softer than in the static render, and fine-grained variation within individual glass panes is lost. This is a direct consequence of the SH9 band limit, which acts as a low-pass filter on the incident radiance field. The Color Volume partially compensates by injecting the broad hue of the glass region above each boid, but it cannot recover the sub-pane detail encoded in a high-resolution lightmap. Measured mean GPU costs range from $2.02\,\text{ms}$ at 100 agents to $4.66\,\text{ms}$ at 1000 agents, driven primarily by the double-pass render texture and the per-fragment SH evaluation across all instanced agents. Critically, this cost grows only modestly with agent count --- a factor of roughly $2.3\times$ from 100 to 1000 boids --- because the SH coefficient lookup and Color Volume projective fetch are $O(1)$ per fragment and therefore scale with rasterized area rather than agent count.
+
+A dynamic approach has results fully responsive to scene changes; compatible with GPU-instanced objects; per-frame GPU cost scales with agent count; lower colour fidelity and loss of high-frequency lighting detail relative to a baked solution.
+
+\subsection{Hybrid Rendering}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{Hybrid.png}
+  \caption{Hybrid rendering combining the UV-texture static window shader with Voronoi-based Spherical Harmonics and Color Volume illumination for GPU-instanced boid agents. The approach balances fidelity and runtime compatibility.}
+  \label{fig:hybrid-render}
+\end{figure}
+
+The hybrid approach, shown in Figure~\ref{fig:hybrid-render}, assigns each shader to the object class for which it is appropriate. The static window panel uses \texttt{StainedGlassShader.shadergraph} with its UV-mapped texture and full screen-space refraction, while the boid agents use \texttt{StainedGlassShaderDynamic.shadergraph} with procedural Voronoi patterns and the same SH and Color Volume pipeline. A transitional material (\texttt{HybridShader.mat}) handles geometry at the boundary between the two object classes.
+
+Comparing Figure~\ref{fig:hybrid-render} with Figures~\ref{fig:static} and~\ref{fig:dynamic} reveals the practical result of this strategy: the window panel itself is visually indistinguishable from the purely static render, while the boid agents receive the same dynamic Voronoi and SH illumination as in the fully dynamic configuration. Measured GPU cost for the hybrid configuration is comparable to or lower than the fully dynamic configuration at every tested agent count, and at 1000 boids is less than one-third the cost of the purely static configuration (see Section~\ref{sec:performance}).
+
+The primary limitation of the hybrid approach is authoring complexity: the scene must contain both a correctly UV-unwrapped static mesh with a completed lightmap bake and a properly configured Color Volume camera. Changes to the static geometry or the dominant light source direction necessitate a rebake of the lightmap, though the dynamic component continues to function correctly in the interim. Scenes with multiple light sources or multiple stained-glass windows would require additional Color Volume cameras and corresponding render passes.
+
+A hybrid rendering approach combines the high fidelity of static baking for stationary geometry with the runtime flexibility of dynamic lighting for GPU-instanced agents; minimal additional per-frame overhead relative to the purely dynamic configuration; requires a precomputation pass for the static component and additional authoring setup.
+
+% ══════════════════════════════════════════════════════════════════
+% SECTION 5: PERFORMANCE ANALYSIS
+% ══════════════════════════════════════════════════════════════════
+\clearpage
+\section{Performance Analysis}
+\label{sec:performance}
+
+Tests were performed on a Mac with the following specifications:
+\begin{itemize}
+  \item Processor: Apple M2
+  \item Memory: 16\,GB RAM
+  \item Graphics Processor: Apple M2 (unified memory)
+  \item Unity Version: 6000.3.8f1
+\end{itemize}
+All times are in milliseconds. Each configuration was profiled in isolation within Unity's Play mode; GPU frame time was recorded via \texttt{ProfilerRecorder} over approximately 30 seconds per run after discarding the first 30 warmup frames.
+
+\subsection{Per-Frame GPU Cost}
+
+Table~\ref{tab:frame-cost} summarises the per-frame GPU cost for each lighting configuration across four agent populations. Four boid counts were chosen to span the practical range of the simulation: 100 agents (low load), 250 (moderate), 500 (high), and 1000 (stress test).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Measured per-frame GPU cost by rendering configuration and boid count. Values are mean~$\pm$~1\,s.d.\ over recorded frames. Hardware: Apple M2, Apple M2, 16\,GB RAM, Unity 6000.3.8f1.}
+  \label{tab:frame-cost}
+  \begin{tabular}{llccccc}
+    \toprule
+    \textbf{Configuration} & \textbf{Boids} & \textbf{Mean (ms)} & \textbf{Std (ms)} & \textbf{Min (ms)} & \textbf{Max (ms)} & \textbf{p95 (ms)} \\
+    \midrule
+    Static & 100 & 2.02 & 0.33 & 0.40 & 5.73 & 2.42 \\
+    Static & 250 & 4.10 & 0.48 & 2.23 & 17.12 & 4.27 \\
+    Static & 500 & 4.06 & 0.95 & 1.12 & 12.51 & 5.66 \\
+    Static & 1000 & 11.38 & 1.65 & 0.44 & 13.78 & 12.47 \\
+    Dynamic & 100 & 2.02 & 0.34 & 0.39 & 8.02 & 2.34 \\
+    Dynamic & 250 & 4.06 & 0.48 & 0.56 & 16.15 & 4.46 \\
+    Dynamic & 500 & 3.78 & 1.49 & 0.10 & 23.65 & 5.86 \\
+    Dynamic & 1000 & 4.66 & 1.54 & 0.77 & 15.26 & 7.85 \\
+    Hybrid & 100 & 1.97 & 0.44 & 0.13 & 20.59 & 2.30 \\
+    Hybrid & 250 & 4.13 & 0.79 & 0.10 & 13.08 & 4.35 \\
+    Hybrid & 500 & 3.90 & 0.41 & 0.10 & 8.67 & 4.15 \\
+    Hybrid & 1000 & 3.71 & 0.92 & 0.11 & 11.49 & 4.58 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The data reveal three distinct performance regimes.
+
+At \textbf{100 boids}, all three configurations are statistically indistinguishable: means of 2.02\,ms (Static), 2.02\,ms (Dynamic), and 1.97\,ms (Hybrid). At this agent count the per-boid contribution to frame time is small relative to fixed scene overhead --- camera setup, shadow passes, Color Volume render --- and the choice of boid shader has no measurable impact.
+
+At \textbf{250--500 boids}, all three configurations remain closely matched, with means in the $3.78$--$4.13\,\text{ms}$ range. The Static configuration's standard deviation widens at 500 boids (0.95\,ms versus 0.48\,ms at 250), suggesting that Unity's batching heuristics begin to produce occasional frame spikes as the instanced draw call grows. Dynamic and Hybrid costs rise gradually but remain within $0.35\,\text{ms}$ of each other across this range.
+
+At \textbf{1000 boids}, the configurations diverge sharply. Static cost jumps to $11.38\,\text{ms}$ (mean) with a p95 of $12.47\,\text{ms}$, indicating that this elevated cost is sustained rather than spike-driven. Dynamic holds at $4.66\,\text{ms}$ and Hybrid at $3.71\,\text{ms}$ --- a $2.4\times$ and $3.1\times$ advantage over Static respectively.
+
+The Static configuration's degradation at scale is the most consequential finding of this study. Although the pre-baked lightmap itself incurs negligible sampling cost, Unity's GPU-instancing path for the boid agents cannot use per-instance lightmap UVs. At large agent counts, the engine's fallback lighting path for these un-baked instances --- which involves per-draw-call probe blending and additional shader variant switching --- introduces overhead that scales unfavourably with agent count. The Dynamic and Hybrid configurations avoid this by design: their per-boid SH and Color Volume lookups are uniform across all instances and are resolved within the same shader variant, preserving Unity's batching efficiency at 1000 agents and beyond.
+
+\subsection{Scaling and Time-Series Analysis}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{profiler_barchart.pdf}
+  \caption{Mean GPU frame cost ($\pm$1\,s.d.) per rendering configuration and boid count.}
+  \label{fig:perf-bar}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{profiler_timeseries.pdf}
+  \caption{Rolling-average GPU frame time per configuration over the recording period (all boid counts overlaid).}
+  \label{fig:perf-ts}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{gpu_cost_500.png}
+  \caption{Frame-by-frame GPU cost for all three configurations at 500 boids.}
+  \label{fig:perf-raw}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.55\textwidth]{profiler_scaling.pdf}
+  \caption{Mean GPU cost versus boid count across 100, 250, 500, and 1000 agents. Static cost rises steeply beyond 500 boids while Dynamic and Hybrid remain nearly flat.}
+  \label{fig:perf-scaling}
+\end{figure}
+
+
+
+
+
+
+
+
+\subsection{Image Quality Metrics}
+
+LPIPS (Learned Perceptual Image Patch Similarity) and DSSIM (Structural Dissimilarity) are commonly used to quantitatively measure how effective a rendering technique may be; DSSIM encapsulates information about an object's luminance, structure, and overall fidelity, while LPIPS utilises a pretrained deep network whose feature distances correlate with human perceptual judgements.
+
+% TODO: Run image_quality.py on screenshot triples (screenshot_NNN_Static.png,
+% _Dynamic.png, _Hybrid.png) to obtain LPIPS and DSSIM values, then replace
+% this comment with the quality_barchart.pdf figure and quality_table.tex results.
+
+\section{Conclusion}
+
+
+This thesis has demonstrated that a hybrid rendering approach --- assigning a UV-texture-based shader (\texttt{StainedGlassShader.shadergraph}) to the stationary window panel and a Voronoi-procedural shader (\texttt{StainedGlassShaderDynamic.shadergraph}) with Spherical Harmonics and a Color Volume render texture to GPU-instanced boid agents --- is both technically viable and computationally superior at scale. The performance measurements reported in Section~\ref{sec:performance} show that at low agent counts (100--500 boids) all three configurations perform comparably, but at 1000 boids the hybrid configuration ($3.71\,\text{ms}$) and dynamic configuration ($4.66\,\text{ms}$) both substantially outperform the static configuration ($11.38\,\text{ms}$). The hybrid approach therefore occupies the optimal point in the design space: it retains the high-fidelity, high-frequency lightmap appearance of the static window panel while avoiding the per-boid fallback lighting overhead that causes the purely static configuration to degrade at scale.
+
+\subsection*{Limitations}
+
+The current implementation is constrained by the resolution of the Color Volume render texture and the low-frequency nature of SH9 lighting, which precludes sharp specular highlights on the boid shards. The technique also assumes a single dominant light source whose view-projection matrix can be precomputed; scenes with multiple coloured windows would require additional render passes. As such, this technique is best precluded to enclosed spaces where individual light sources can be addressed by developers. 
+
+\subsection*{Future Research}
+
+Future work could investigate higher-order spherical harmonic bases or learnable neural irradiance representations to recover higher-frequency lighting detail on GPU-instanced geometry. Extending the Color Volume approach to support multiple overlapping projectors, or adapting it to clustered deferred rendering pipelines, would broaden its applicability to more complex real-time scenes.\ 
+
+Additionally, work demonstrated in %https://arxiv.org/html/2402.00028v1 
+shows that neural networks can be leveraged to further enhance hybrid rendering techniques.
+
+%Mention the neural network hybrid rendering pipelines
+
+% ── REFERENCES ────────────────────────────────────────────────────
+
+\clearpage
+\begin{thebibliography}{99}
+
+\bibitem{Green2003}
+Robin Green. 2003. Spherical Harmonic Lighting: The Gritty Details.
+Presented at the Game Developers Conference (GDC).
+
+
+\bibitem{Guo2022}
+Jie Guo, Zilin Zong, Yanjun Song, Xihao Fu, Chengzhi Tao, Yanwen Guo, and Li-Qian Yan. 2022.
+Efficient Light Probes for Real-Time Global Illumination.
+\textit{ACM Transactions on Graphics} 41, 6 (2022).
+\url{https://doi.org/10.1145/3550454.3555452}
+
+\bibitem{Schied2017}
+Christoph Schied, Anton Kaplanyan, Chris Wyman, Anjul Patney,
+Chakravarty R.\ Alla Chaitanya, John Burgess, Shiqiu Liu,
+Carsten Dachsbacher, Aaron Lefohn, and Marco Salvi. 2017.
+Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for
+Path-Traced Global Illumination.
+In \textit{Proceedings of High Performance Graphics (HPG '17)}. ACM.
+\url{https://doi.org/10.1145/3105762.3105770}
+
+\bibitem{TanLowChow2024}
+Yong Wei Tan, Su Ee Low, Javier Chow, Jeremy Teo, and Anand Bhojan. 2024.
+DHR+S: Distributed Hybrid Rendering with Realistic Real-Time Shadows for
+Interactive Thin Client Metaverse and Game Applications.
+\textit{The Visual Computer} 40 (2024), 4981--4991. Springer.
+\url{https://doi.org/10.1007/s00371-024-03501-4}
+
+\bibitem{Reynolds1987}
+Craig W. Reynolds. 1987. Flocks, Herds and Schools: A Distributed Behavioral Model.
+In \textit{Proceedings of SIGGRAPH '87}, 25--34. ACM.
+\url{https://doi.org/10.1145/37401.37406}
+
+\bibitem{Silva2008}
+A.\ R.\ Silva \textit{et al.} 2008.
+Boids that see: Using self-occlusion for simulating large groups on GPUs.
+
+
+\bibitem{Mezieres2021}
+% TODO: Confirm full citation for the SH ringing artefact paper.
+% If the citation cannot be confirmed, remove this entry and the
+% \cite{Mezieres2021} reference in Section~2.3.
+P.\ M\'ezi\`eres \textit{et al.} 2021.
+[Title to be confirmed] --- on ringing artefacts in low-order spherical harmonic lighting.
+
+
+%https://arxiv.org/html/2402.00028v1
+
+\end{thebibliography}
+
+\end{document}

@@ -34,7 +34,7 @@ public class BoidSettings : ScriptableObject
     public float boundaryTurnStrength = 5f;
 
     [Header("Spawning")]
-    public int flockSize = 40;
+    public int flockSize = 0;
     public float spawnRadius = 5f;
 
     [Header("Target Following")]

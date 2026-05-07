@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:onlinelibrary.wiley.com)"
+      "WebFetch(domain:onlinelibrary.wiley.com)",
+      "Bash(python3 graph_profiler.py)",
+      "Read(//Users/matthewlee/Documents/GitHub/Thesis-1/**)",
+      "Bash(python3)"
     ]
   }
 }
