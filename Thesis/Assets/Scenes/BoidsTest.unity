@@ -1300,7 +1300,7 @@ MonoBehaviour:
   windowHeight: 8
   fractureSeed: 42
   shardMaterial: {fileID: 0}
-  spawnCount: 1000
+  spawnCount: 100
   drawGizmos: 1
 --- !u!4 &1605708320
 Transform:
@@ -1494,7 +1494,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 856389034894429608, guid: bcc2e50c435c3bd4d959911c6eb2a109, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1105600923837559763, guid: bcc2e50c435c3bd4d959911c6eb2a109, type: 3}
       propertyPath: m_LocalPosition.x
